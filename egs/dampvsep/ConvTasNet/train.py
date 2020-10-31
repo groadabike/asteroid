@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
-from asteroid.models import ConvTasNet
+from .model import make_model_and_optimizer
 from asteroid.data import DAMPVSEPDataset
 from asteroid.engine.optimizers import make_optimizer
 from asteroid.engine.system import System
@@ -59,8 +59,18 @@ def main(conf):
 
     conf["masknet"].update({"n_src": conf["data"]["n_src"]})
 
-    model = ConvTasNet(**conf["filterbank"], **conf["masknet"])
-    optimizer = make_optimizer(model.parameters(), **conf["optim"])
+    conf["embedding"] = {}
+    conf["embedding"]["enc_n_filters"] = conf["filterbank"]["n_filters"]
+    conf["embedding"]["enc_kernel_size"] = conf["filterbank"]["kernel_size"]
+    conf["embedding"]["enc_stride"] = conf["filterbank"]["stride"]
+    conf["embedding"]["enc_padding"] = 0
+    conf["embedding"]["enc_dilation"] = 1
+    conf["embedding"]["sample_rate"] = conf["data"]["sample_rate"]
+    conf["embedding"]["segment"] = conf["data"]["segment"]
+    conf["embedding"]["emb_size"] = 128
+
+    embedding = None
+    model, optimizer = make_model_and_optimizer(conf, embedding)
 
     # Define scheduler
     scheduler = None
