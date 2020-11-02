@@ -47,7 +47,8 @@ class Model(nn.Module):
         tf_rep = self.encoder(x)
 
         if self.embedding:
-            intr_emb = self.embedding(x)
+            intr_emb = torch.Tensor(self.embedding(x))
+            intr_emb = torch.mean(intr_emb, dim=1)
             shape_1 = tf_rep.shape[1]
             shape_2 = tf_rep.shape[2]
             flat_tf_rep = tf_rep.view(-1, shape_1 * shape_2)

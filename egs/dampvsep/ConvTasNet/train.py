@@ -69,7 +69,7 @@ def main(conf):
     conf["embedding"]["segment"] = conf["data"]["segment"]
     conf["embedding"]["emb_size"] = 128
 
-    embedding = None
+    embedding = torch.hub.load('harritaylor/torchvggish', 'vggish')
     model, optimizer = make_model_and_optimizer(conf, embedding)
 
     # Define scheduler
