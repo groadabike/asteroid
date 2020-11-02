@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
-from .model import make_model_and_optimizer
+from model import make_model_and_optimizer
 from asteroid.data import DAMPVSEPDataset
 from asteroid.engine.optimizers import make_optimizer
 from asteroid.engine.system import System

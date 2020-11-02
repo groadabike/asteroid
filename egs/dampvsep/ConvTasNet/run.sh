@@ -19,7 +19,7 @@ out_dir=dampvsep # Controls the directory name associated to the evaluation resu
 
 # Network config
 n_blocks=10
-n_repeats=4
+n_repeats=3
 mask_act=relu
 
 # Training config
