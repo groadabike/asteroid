@@ -9,4 +9,4 @@ if [ ! -d DAMP-VSEP-Singles ]; then
 fi
 
 # Generate the splits
-. DAMP-VSEP-Singles/generate_dampvsep_singles.sh $dampvsep_root metadata $python_path
+. DAMP-VSEP-Singles/generate_dampvsep_singles.sh $dampvsep_root ../metadata $python_path
