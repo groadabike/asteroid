@@ -101,6 +101,10 @@ class DAMPVSEPDataset(torch.utils.data.Dataset):
         self.norm = norm
         self.source_augmentations = source_augmentations
         self.mixture = mixture
+
+        self.embedding = torch.hub.load('harritaylor/torchvggish', 'vggish',
+                                        preprocess=True, postprocess=True)
+
         if self.mixture == "original" and self.split == "train_english":
             raise Exception("The 'train_english' train can only accept 'remix' mixture.")
 
@@ -121,10 +125,6 @@ class DAMPVSEPDataset(torch.utils.data.Dataset):
             x *= scaler
         x -= mean
         x /= std
-
-        if self.source_augmentations:
-            x = self.source_augmentations(x, self.sample_rate)
-        x = torch.from_numpy(x.T)
 
         return x
 
@@ -159,12 +159,19 @@ class DAMPVSEPDataset(torch.utils.data.Dataset):
 
             x = self._load_audio(
                 self.root_path / self.tracks[perf][source],
-                start=start + float(self.tracks[perf][f"{source}_start"]),
+                start=(start + float(self.tracks[perf][f"{source}_start"])) // 1.0,
                 duration=duration,
                 scaler=scaler,
                 mean=mix_mean,
                 std=mix_std,
             )
+            if source == 'background':
+                inst_emb = self.embedding(x, fs=self.sample_rate)
+
+            if self.source_augmentations:
+                x = self.source_augmentations(x, self.sample_rate)
+
+            x = torch.from_numpy(x.T)
             audio_sources[source] = x
 
         # Prepare targets and mixture
@@ -183,7 +190,7 @@ class DAMPVSEPDataset(torch.utils.data.Dataset):
                 std=mix_std,
             )
 
-        return audio_mix, audio_sources
+        return audio_mix, audio_sources, inst_emb
 
     def get_track_name(self, idx):
         track_id = idx // self.samples_per_track
