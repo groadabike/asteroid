@@ -1,30 +1,25 @@
 import torch
 from torch.nn.modules.loss import _Loss
-from ..utils.deprecation_utils import DeprecationMixin
 
 
 class PairwiseNegSDR(_Loss):
-    """Base class for pairwise negative SI-SDR, SD-SDR and SNR on a batch.
+    r"""Base class for pairwise negative SI-SDR, SD-SDR and SNR on a batch.
 
     Args:
-        sdr_type (str): choose between "snr" for plain SNR, "sisdr" for
-            SI-SDR and "sdsdr" for SD-SDR [1].
+        sdr_type (str): choose between ``snr`` for plain SNR, ``sisdr`` for
+            SI-SDR and ``sdsdr`` for SD-SDR [1].
         zero_mean (bool, optional): by default it zero mean the target
             and estimate before computing the loss.
         take_log (bool, optional): by default the log10 of sdr is returned.
 
     Shape:
-        est_targets (:class:`torch.Tensor`): Expected shape
-            [batch, n_src, time]. Batch of target estimates.
-        targets (:class:`torch.Tensor`): Expected shape
-            [batch, n_src, time]. Batch of training targets.
+        - est_targets : :math:`(batch, nsrc, ...)`.
+        - targets: :math:`(batch, nsrc, ...)`.
 
     Returns:
-        :class:`torch.Tensor`: with shape [batch, n_src, n_src].
-        Pairwise losses.
+        :class:`torch.Tensor`: with shape :math:`(batch, nsrc, nsrc)`. Pairwise losses.
 
     Examples
-
         >>> import torch
         >>> from asteroid.losses import PITLossWrapper
         >>> targets = torch.randn(10, 2, 32000)
@@ -34,7 +29,7 @@ class PairwiseNegSDR(_Loss):
         >>> loss = loss_func(est_targets, targets)
 
     References
-        - [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
+        [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
         International Conference on Acoustics, Speech and Signal
         Processing (ICASSP) 2019.
     """
@@ -48,6 +43,10 @@ class PairwiseNegSDR(_Loss):
         self.EPS = EPS
 
     def forward(self, est_targets, targets):
+        if targets.size() != est_targets.size() or targets.ndim != 3:
+            raise TypeError(
+                f"Inputs must be of shape [batch, n_src, time], got {targets.size()} and {est_targets.size()} instead"
+            )
         assert targets.size() == est_targets.size()
         # Step 1. Zero-mean norm
         if self.zero_mean:
@@ -83,32 +82,29 @@ class PairwiseNegSDR(_Loss):
 
 
 class SingleSrcNegSDR(_Loss):
-    """Base class for single-source negative SI-SDR, SD-SDR and SNR.
+    r"""Base class for single-source negative SI-SDR, SD-SDR and SNR.
 
     Args:
-        sdr_type (string): choose between "snr" for plain SNR, "sisdr" for
-            SI-SDR and "sdsdr" for SD-SDR [1].
+        sdr_type (str): choose between ``snr`` for plain SNR, ``sisdr`` for
+            SI-SDR and ``sdsdr`` for SD-SDR [1].
         zero_mean (bool, optional): by default it zero mean the target and
             estimate before computing the loss.
         take_log (bool, optional): by default the log10 of sdr is returned.
         reduction (string, optional): Specifies the reduction to apply to
             the output:
-        ``'none'`` | ``'mean'``. ``'none'``: no reduction will be applied,
-        ``'mean'``: the sum of the output will be divided by the number of
-        elements in the output.
+            ``'none'`` | ``'mean'``. ``'none'``: no reduction will be applied,
+            ``'mean'``: the sum of the output will be divided by the number of
+            elements in the output.
 
     Shape:
-        est_targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of target estimates.
-        targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of training targets.
+        - est_targets : :math:`(batch, time)`.
+        - targets: :math:`(batch, time)`.
 
     Returns:
-        :class:`torch.Tensor`: with shape [batch] if reduction='none' else
-            [] scalar if reduction='mean'.
+        :class:`torch.Tensor`: with shape :math:`(batch)` if ``reduction='none'`` else
+        [] scalar if ``reduction='mean'``.
 
     Examples
-
         >>> import torch
         >>> from asteroid.losses import PITLossWrapper
         >>> targets = torch.randn(10, 2, 32000)
@@ -118,7 +114,7 @@ class SingleSrcNegSDR(_Loss):
         >>> loss = loss_func(est_targets, targets)
 
     References
-        - [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
+        [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
         International Conference on Acoustics, Speech and Signal
         Processing (ICASSP) 2019.
     """
@@ -134,7 +130,10 @@ class SingleSrcNegSDR(_Loss):
         self.EPS = 1e-8
 
     def forward(self, est_target, target):
-        assert target.size() == est_target.size()
+        if target.size() != est_target.size() or target.ndim != 2:
+            raise TypeError(
+                f"Inputs must be of shape [batch, time], got {target.size()} and {est_target.size()} instead"
+            )
         # Step 1. Zero-mean norm
         if self.zero_mean:
             mean_source = torch.mean(target, dim=1, keepdim=True)
@@ -165,28 +164,25 @@ class SingleSrcNegSDR(_Loss):
 
 
 class MultiSrcNegSDR(_Loss):
-    """Base class for computing negative SI-SDR, SD-SDR and SNR for a given
+    r"""Base class for computing negative SI-SDR, SD-SDR and SNR for a given
     permutation of source and their estimates.
 
     Args:
-        sdr_type (string): choose between "snr" for plain SNR, "sisdr" for
-            SI-SDR and "sdsdr" for SD-SDR [1].
+        sdr_type (str): choose between ``snr`` for plain SNR, ``sisdr`` for
+            SI-SDR and ``sdsdr`` for SD-SDR [1].
         zero_mean (bool, optional): by default it zero mean the target
             and estimate before computing the loss.
         take_log (bool, optional): by default the log10 of sdr is returned.
 
     Shape:
-        est_targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of target estimates.
-        targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of training targets.
+        - est_targets : :math:`(batch, nsrc, time)`.
+        - targets: :math:`(batch, nsrc, time)`.
 
     Returns:
-        :class:`torch.Tensor`: with shape [batch] if reduction='none' else
-            [] scalar if reduction='mean'.
+        :class:`torch.Tensor`: with shape :math:`(batch)` if ``reduction='none'`` else
+        [] scalar if ``reduction='mean'``.
 
     Examples
-
         >>> import torch
         >>> from asteroid.losses import PITLossWrapper
         >>> targets = torch.randn(10, 2, 32000)
@@ -196,7 +192,7 @@ class MultiSrcNegSDR(_Loss):
         >>> loss = loss_func(est_targets, targets)
 
     References
-        - [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
+        [1] Le Roux, Jonathan, et al. "SDR half-baked or well done." IEEE
         International Conference on Acoustics, Speech and Signal
         Processing (ICASSP) 2019.
 
@@ -212,8 +208,10 @@ class MultiSrcNegSDR(_Loss):
         self.EPS = 1e-8
 
     def forward(self, est_targets, targets):
-        assert targets.size() == est_targets.size()
-        # Step 1. Zero-mean norm
+        if targets.size() != est_targets.size() or targets.ndim != 3:
+            raise TypeError(
+                f"Inputs must be of shape [batch, n_src, time], got {targets.size()} and {est_targets.size()} instead"
+            )
         if self.zero_mean:
             mean_source = torch.mean(targets, dim=2, keepdim=True)
             mean_estimate = torch.mean(est_targets, dim=2, keepdim=True)
@@ -253,24 +251,3 @@ singlesrc_neg_snr = SingleSrcNegSDR("snr")
 multisrc_neg_sisdr = MultiSrcNegSDR("sisdr")
 multisrc_neg_sdsdr = MultiSrcNegSDR("sdsdr")
 multisrc_neg_snr = MultiSrcNegSDR("snr")
-
-
-# Legacy
-class NonPitSDR(MultiSrcNegSDR, DeprecationMixin):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.warn_deprecated()
-
-
-class NoSrcSDR(SingleSrcNegSDR, DeprecationMixin):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.warn_deprecated()
-
-
-nosrc_neg_sisdr = singlesrc_neg_sisdr
-nosrc_neg_sdsdr = singlesrc_neg_sdsdr
-nosrc_neg_snr = singlesrc_neg_snr
-nonpit_neg_sisdr = multisrc_neg_sisdr
-nonpit_neg_sdsdr = multisrc_neg_sdsdr
-nonpit_neg_snr = multisrc_neg_snr

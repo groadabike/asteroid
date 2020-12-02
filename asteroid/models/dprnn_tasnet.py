@@ -1,4 +1,4 @@
-from ..filterbanks import make_enc_dec
+from asteroid_filterbanks import make_enc_dec
 from ..masknn import DPRNN
 from .base_models import BaseEncoderMaskerDecoder
 
@@ -45,8 +45,8 @@ class DPRNNTasNet(BaseEncoderMaskerDecoder):
 
     References
         - [1] "Dual-path RNN: efficient long sequence modeling for
-        time-domain single-channel speech separation", Yi Luo, Zhuo Chen
-        and Takuya Yoshioka. https://arxiv.org/abs/1910.06379
+          time-domain single-channel speech separation", Yi Luo, Zhuo Chen
+          and Takuya Yoshioka. https://arxiv.org/abs/1910.06379
     """
 
     def __init__(

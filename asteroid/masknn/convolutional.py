@@ -1,3 +1,6 @@
+from typing import List, Tuple, Optional
+
+import numpy as np
 import torch
 from torch import nn
 import warnings
@@ -10,6 +13,7 @@ from ..utils import has_arg
 from ..utils.deprecation_utils import VisibleDeprecationWarning
 from ._dcunet_architectures import DCUNET_ARCHITECTURES
 from ._local import _DilatedConvNorm, _NormAct, _ConvNormAct, _ConvNorm
+from ..utils.torch_utils import script_if_tracing, pad_x_to_y
 
 
 class Conv1DBlock(nn.Module):
@@ -28,12 +32,13 @@ class Conv1DBlock(nn.Module):
         dilation (int): Dilation of the depth-wise convolution.
         norm_type (str, optional): Type of normalization to use. To choose from
 
-            -  ``'gLN'``: global Layernorm
-            -  ``'cLN'``: channelwise Layernorm
-            -  ``'cgLN'``: cumulative global Layernorm
+            -  ``'gLN'``: global Layernorm.
+            -  ``'cLN'``: channelwise Layernorm.
+            -  ``'cgLN'``: cumulative global Layernorm.
+            -  Any norm supported by :func:`~.norms.get`
 
     References
-        - [1] : "Conv-TasNet: Surpassing ideal time-frequency magnitude masking
+        [1] : "Conv-TasNet: Surpassing ideal time-frequency magnitude masking
         for speech separation" TASLP 2019 Yi Luo, Nima Mesgarani
         https://arxiv.org/abs/1809.07454
     """
@@ -61,7 +66,7 @@ class Conv1DBlock(nn.Module):
             self.skip_conv = nn.Conv1d(hid_chan, skip_out_chan, 1)
 
     def forward(self, x):
-        """ Input shape [batch, feats, seq]"""
+        r"""Input shape $(batch, feats, seq)$."""
         shared_out = self.shared_block(x)
         res_out = self.res_conv(shared_out)
         if not self.skip_out_chan:
@@ -94,7 +99,7 @@ class TDConvNet(nn.Module):
         mask_act (str, optional): Which non-linear function to generate mask.
 
     References
-        - [1] : "Conv-TasNet: Surpassing ideal time-frequency magnitude masking
+        [1] : "Conv-TasNet: Surpassing ideal time-frequency magnitude masking
         for speech separation" TASLP 2019 Yi Luo, Nima Mesgarani
         https://arxiv.org/abs/1809.07454
     """
@@ -112,7 +117,6 @@ class TDConvNet(nn.Module):
         conv_kernel_size=3,
         norm_type="gLN",
         mask_act="relu",
-        kernel_size=None,
     ):
         super(TDConvNet, self).__init__()
         self.in_chan = in_chan
@@ -124,15 +128,6 @@ class TDConvNet(nn.Module):
         self.bn_chan = bn_chan
         self.hid_chan = hid_chan
         self.skip_chan = skip_chan
-        if kernel_size is not None:
-            # warning
-            warnings.warn(
-                "`kernel_size` argument is deprecated since v0.2.1 "
-                "and will be remove in v0.3.0. Use argument "
-                "`conv_kernel_size` instead",
-                VisibleDeprecationWarning,
-            )
-            conv_kernel_size = kernel_size
         self.conv_kernel_size = conv_kernel_size
         self.norm_type = norm_type
         self.mask_act = mask_act
@@ -168,19 +163,17 @@ class TDConvNet(nn.Module):
             self.output_act = mask_nl_class()
 
     def forward(self, mixture_w):
-        """
+        r"""Forward.
 
         Args:
-            mixture_w (:class:`torch.Tensor`): Tensor of shape
-                [batch, n_filters, n_frames]
+            mixture_w (:class:`torch.Tensor`): Tensor of shape $(batch, nfilters, nframes)$
 
         Returns:
-            :class:`torch.Tensor`:
-                estimated mask of shape [batch, n_src, n_filters, n_frames]
+            :class:`torch.Tensor`: estimated mask of shape $(batch, nsrc, nfilters, nframes)$
         """
         batch, _, n_frames = mixture_w.size()
         output = self.bottleneck(mixture_w)
-        skip_connection = torch.tensor([0.0])
+        skip_connection = torch.tensor([0.0], device=output.device)
         for layer in self.TCN:
             # Common to w. skip and w.o skip architectures
             tcn_out = layer(output)
@@ -238,18 +231,20 @@ class TDConvNetpp(nn.Module):
         mask_act (str, optional): Which non-linear function to generate mask.
 
     References
-        - [1] : Kavalerov, Ilya et al. “Universal Sound Separation.” in WASPAA 2019
+        [1] : Kavalerov, Ilya et al. “Universal Sound Separation.” in WASPAA 2019
 
-    Notes:
-        The differences wrt to ConvTasnet's TCN are
+    .. note::
+        The differences wrt to ConvTasnet's TCN are:
+
         1. Channel wise layer norm instead of global
         2. Longer-range skip-residual connections from earlier repeat inputs
-            to later repeat inputs after passing them through dense layer.
+           to later repeat inputs after passing them through dense layer.
         3. Learnable scaling parameter after each dense layer. The scaling
-            parameter for the second dense  layer  in  each  convolutional
-            block (which  is  applied  rightbefore the residual connection) is
-            initialized to an exponentially decaying scalar equal to 0.9**L,
-            where L is the layer or block index.
+           parameter for the second dense  layer  in  each  convolutional
+           block (which  is  applied  rightbefore the residual connection) is
+           initialized to an exponentially decaying scalar equal to 0.9**L,
+           where L is the layer or block index.
+
     """
 
     def __init__(
@@ -323,15 +318,13 @@ class TDConvNetpp(nn.Module):
         self.consistency = nn.Linear(out_size, n_src)
 
     def forward(self, mixture_w):
-        """
+        r"""Forward.
 
         Args:
-            mixture_w (:class:`torch.Tensor`): Tensor of shape
-                [batch, n_filters, n_frames]
+            mixture_w (:class:`torch.Tensor`): Tensor of shape $(batch, nfilters, nframes)$
 
         Returns:
-            :class:`torch.Tensor`:
-                estimated mask of shape [batch, n_src, n_filters, n_frames]
+            :class:`torch.Tensor`: estimated mask of shape $(batch, nsrc, nfilters, nframes)$
         """
         batch, n_filters, n_frames = mixture_w.size()
         output = self.bottleneck(mixture_w)
@@ -386,7 +379,7 @@ class TDConvNetpp(nn.Module):
         return config
 
 
-class DCUNetComplexEncoderBlock(nn.Module):  # CHECK-JIT
+class DCUNetComplexEncoderBlock(nn.Module):
     """Encoder block as proposed in [1].
 
     Args:
@@ -396,12 +389,12 @@ class DCUNetComplexEncoderBlock(nn.Module):  # CHECK-JIT
         stride (Tuple[int, int]): Convolution stride.
         padding (Tuple[int, int]): Convolution padding.
         norm_type (str, optional): Type of normalization to use.
-            See ``asteroid.masknn.norms`` for valid values.
+            See :mod:`~asteroid.masknn.norms` for valid values.
         activation (str, optional): Type of activation to use.
-            See ``asteroid.masknn.activations`` for valid values.
+            See :mod:`~asteroid.masknn.activations` for valid values.
 
     References
-        - [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
+        [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
         Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
     """
 
@@ -417,7 +410,9 @@ class DCUNetComplexEncoderBlock(nn.Module):  # CHECK-JIT
     ):
         super().__init__()
 
-        self.conv = complex_nn.ComplexConv2d(in_chan, out_chan, kernel_size, stride, padding)
+        self.conv = complex_nn.ComplexConv2d(
+            in_chan, out_chan, kernel_size, stride, padding, bias=norm_type is None
+        )
 
         self.norm = norms.get_complex(norm_type)(out_chan)
 
@@ -428,7 +423,7 @@ class DCUNetComplexEncoderBlock(nn.Module):  # CHECK-JIT
         return self.activation(self.norm(self.conv(x)))
 
 
-class DCUNetComplexDecoderBlock(nn.Module):  # CHECK-JIT
+class DCUNetComplexDecoderBlock(nn.Module):
     """Decoder block as proposed in [1].
 
     Args:
@@ -438,12 +433,12 @@ class DCUNetComplexDecoderBlock(nn.Module):  # CHECK-JIT
         stride (Tuple[int, int]): Convolution stride.
         padding (Tuple[int, int]): Convolution padding.
         norm_type (str, optional): Type of normalization to use.
-            See ``asteroid.masknn.norms`` for valid values.
+            See :mod:`~asteroid.masknn.norms` for valid values.
         activation (str, optional): Type of activation to use.
-            See ``asteroid.masknn.activations`` for valid values.
+            See :mod:`~asteroid.masknn.activations` for valid values.
 
     References
-        - [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
+        [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
         Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
     """
 
@@ -454,6 +449,7 @@ class DCUNetComplexDecoderBlock(nn.Module):  # CHECK-JIT
         kernel_size,
         stride,
         padding,
+        output_padding=(0, 0),
         norm_type="bN",
         activation="leaky_relu",
     ):
@@ -464,9 +460,10 @@ class DCUNetComplexDecoderBlock(nn.Module):  # CHECK-JIT
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
+        self.output_padding = output_padding
 
         self.deconv = complex_nn.ComplexConvTranspose2d(
-            in_chan, out_chan, kernel_size, stride, padding
+            in_chan, out_chan, kernel_size, stride, padding, output_padding, bias=norm_type is None
         )
 
         self.norm = norms.get_complex(norm_type)(out_chan)
@@ -478,18 +475,84 @@ class DCUNetComplexDecoderBlock(nn.Module):  # CHECK-JIT
         return self.activation(self.norm(self.deconv(x)))
 
 
-class DCUMaskNet(BaseDCUMaskNet):  # CHECK-JIT
-    """Masking part of DCUNet, as proposed in [1].
+class DCUMaskNet(BaseDCUMaskNet):
+    r"""Masking part of DCUNet, as proposed in [1].
 
     Valid `architecture` values for the ``default_architecture`` classmethod are:
-    "Large-DCUNet-20", "DCUNet-20", "DCUNet-16", "DCUNet-10".
+    "Large-DCUNet-20", "DCUNet-20", "DCUNet-16", "DCUNet-10" and "mini".
+
+    Valid `fix_length_mode` values are [None, "pad", "trim"].
+
+    Input shape is expected to be $(batch, nfreqs, time)$, with $nfreqs - 1$ divisible
+    by $f_0 * f_1 * ... * f_N$ where $f_k$ are the frequency strides of the encoders,
+    and $time - 1$ is divisible by $t_0 * t_1 * ... * t_N$ where $t_N$ are the time
+    strides of the encoders.
 
     References
-        - [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
+        [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
         Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
     """
 
     _architectures = DCUNET_ARCHITECTURES
+
+    def __init__(self, encoders, decoders, fix_length_mode=None, **kwargs):
+        self.fix_length_mode = fix_length_mode
+        self.encoders_stride_product = np.prod(
+            [enc_stride for _, _, _, enc_stride, _ in encoders], axis=0
+        )
+
+        # Avoid circual import
+        from .convolutional import DCUNetComplexDecoderBlock, DCUNetComplexEncoderBlock
+
+        super().__init__(
+            encoders=[DCUNetComplexEncoderBlock(*args) for args in encoders],
+            decoders=[DCUNetComplexDecoderBlock(*args) for args in decoders[:-1]],
+            output_layer=complex_nn.ComplexConvTranspose2d(*decoders[-1]),
+            **kwargs,
+        )
+
+    def fix_input_dims(self, x):
+        return _fix_dcu_input_dims(
+            self.fix_length_mode, x, torch.from_numpy(self.encoders_stride_product)
+        )
+
+    def fix_output_dims(self, out, x):
+        return _fix_dcu_output_dims(self.fix_length_mode, out, x)
+
+
+@script_if_tracing
+def _fix_dcu_input_dims(fix_length_mode: Optional[str], x, encoders_stride_product):
+    """Pad or trim `x` to a length compatible with DCUNet."""
+    freq_prod = int(encoders_stride_product[0])
+    time_prod = int(encoders_stride_product[1])
+    if (x.shape[1] - 1) % freq_prod:
+        raise TypeError(
+            f"Input shape must be [batch, freq + 1, time + 1] with freq divisible by "
+            f"{freq_prod}, got {x.shape} instead"
+        )
+    time_remainder = (x.shape[2] - 1) % time_prod
+    if time_remainder:
+        if fix_length_mode is None:
+            raise TypeError(
+                f"Input shape must be [batch, freq + 1, time + 1] with time divisible by "
+                f"{time_prod}, got {x.shape} instead. Set the 'fix_length_mode' argument "
+                f"in 'DCUNet' to 'pad' or 'trim' to fix shapes automatically."
+            )
+        elif fix_length_mode == "pad":
+            pad_shape = [0, time_prod - time_remainder]
+            x = nn.functional.pad(x, pad_shape, mode="constant")
+        elif fix_length_mode == "trim":
+            pad_shape = [0, -time_remainder]
+            x = nn.functional.pad(x, pad_shape, mode="constant")
+        else:
+            raise ValueError(f"Unknown fix_length mode '{fix_length_mode}'")
+    return x
+
+
+@script_if_tracing
+def _fix_dcu_output_dims(fix_length_mode: Optional[str], out, x):
+    """Fix shape of `out` to the original shape of `x`."""
+    return pad_x_to_y(out, x)
 
 
 class SuDORMRF(nn.Module):
@@ -504,7 +567,7 @@ class SuDORMRF(nn.Module):
         mask_act (str): Name of output activation.
 
     References
-        - [1] : "Sudo rm -rf: Efficient Networks for Universal Audio Source Separation",
+        [1] : "Sudo rm -rf: Efficient Networks for Universal Audio Source Separation",
         Tzinis et al. MLSP 2020.
     """
 
@@ -598,7 +661,7 @@ class SuDORMRFImproved(nn.Module):
 
 
     References
-        - [1] : "Sudo rm -rf: Efficient Networks for Universal Audio Source Separation",
+        [1] : "Sudo rm -rf: Efficient Networks for Universal Audio Source Separation",
         Tzinis et al. MLSP 2020.
     """
 
@@ -715,8 +778,7 @@ class _BaseUBlock(nn.Module):
 class UBlock(_BaseUBlock):
     """Upsampling block.
 
-    Based on the following principle:
-        ``REDUCE ---> SPLIT ---> TRANSFORM --> MERGE``
+    Based on the following principle: ``REDUCE ---> SPLIT ---> TRANSFORM --> MERGE``
     """
 
     def __init__(self, out_chan=128, in_chan=512, upsampling_depth=4):

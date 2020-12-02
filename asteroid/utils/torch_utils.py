@@ -5,7 +5,7 @@ from torch import nn
 from collections import OrderedDict
 
 
-def to_cuda(tensors):  # pragma: no cover (No CUDA on travis)
+def to_cuda(tensors):  # pragma: no cover
     """Transfer tensor, dict or list of tensors to GPU.
 
     Args:
@@ -14,8 +14,8 @@ def to_cuda(tensors):  # pragma: no cover (No CUDA on travis)
 
     Returns:
         :class:`torch.Tensor`:
-            Same as input but transferred to cuda. Goes through lists and dicts
-            and transfers the torch.Tensor to cuda. Leaves the rest untouched.
+        Same as input but transferred to cuda. Goes through lists and dicts
+        and transfers the torch.Tensor to cuda. Leaves the rest untouched.
     """
     if isinstance(tensors, torch.Tensor):
         return tensors.cuda()
@@ -57,6 +57,31 @@ def tensors_to_device(tensors, device):
         return tensors
 
 
+def get_device(tensor_or_module, default=None):
+    """Get the device of a tensor or a module.
+
+    Args:
+        tensor_or_module (Union[torch.Tensor, torch.nn.Module]):
+            The object to get the device from. Can be a ``torch.Tensor``,
+            a ``torch.nn.Module``, or anything else that has a ``device`` attribute
+            or a ``parameters() -> Iterator[torch.Tensor]`` method.
+        default (Optional[Union[str, torch.device]]): If the device can not be
+            determined, return this device instead. If ``None`` (the default),
+            raise a ``TypeError`` instead.
+
+    Returns:
+        torch.device: The device that ``tensor_or_module`` is on.
+    """
+    if hasattr(tensor_or_module, "device"):
+        return tensor_or_module.device
+    elif hasattr(tensor_or_module, "parameters"):
+        return next(tensor_or_module.parameters()).device
+    elif default is None:
+        raise TypeError(f"Don't know how to get device of {type(tensor_or_module)} object")
+    else:
+        return torch.device(default)
+
+
 def is_tracing():
     # Taken for pytorch for compat in 1.6.0
     """
@@ -81,8 +106,8 @@ def script_if_tracing(fn):
         fn: A function to compile.
 
     Returns:
-        If called during tracing, a :class:`ScriptFunction` created by `torch.jit.script` is returned.
-        Otherwise, the original function `fn` is returned.
+        If called during tracing, a :class:`ScriptFunction` created by `
+        `torch.jit.script`` is returned. Otherwise, the original function ``fn`` is returned.
     """
 
     @functools.wraps(fn)
@@ -102,15 +127,15 @@ def script_if_tracing(fn):
 
 @script_if_tracing
 def pad_x_to_y(x: torch.Tensor, y: torch.Tensor, axis: int = -1) -> torch.Tensor:
-    """Pad first argument to have same size as second argument
+    """Right-pad or right-trim first argument to have same size as second argument
 
     Args:
         x (torch.Tensor): Tensor to be padded.
-        y (torch.Tensor): Tensor to pad x to.
+        y (torch.Tensor): Tensor to pad `x` to.
         axis (int): Axis to pad on.
 
     Returns:
-        torch.Tensor, x padded to match y's shape.
+        torch.Tensor, `x` padded to match `y`'s shape.
     """
     if axis != -1:
         raise NotImplementedError
@@ -130,11 +155,11 @@ def load_state_dict_in(state_dict, model):
     Returns:
         torch.nn.Module: model with loaded weights.
 
-    .. note:: Keys in a state_dict look like object1.object2.layer_name.weight.etc
+    .. note:: Keys in a state_dict look like ``object1.object2.layer_name.weight.etc``
         We first try to load the model in the classic way.
         If this fail we removes the first left part of the key to obtain
-        object2.layer_name.weight.etc.
-        Blindly loading with strictly=False should be done with some logging
+        ``object2.layer_name.weight.etc``.
+        Blindly loading with ``strictly=False`` should be done with some logging
         of the missing keys in the state_dict and the model.
 
     """
@@ -174,15 +199,16 @@ def are_models_equal(model1, model2):
 
 @script_if_tracing
 def jitable_shape(tensor):
-    """Gets shape of `tensor` as `torch.Tensor` type for jit compiler
+    """Gets shape of ``tensor`` as ``torch.Tensor`` type for jit compiler
 
-    ..note:: Returning `tensor.shape` of `tensor.size()` directly is not torchscript
+    .. note::
+        Returning ``tensor.shape`` of ``tensor.size()`` directly is not torchscript
         compatible as return type would not be supported.
 
     Args:
         tensor (torch.Tensor): Tensor
 
     Returns:
-        torch.Tensor: Shape of `tensor`
+        torch.Tensor: Shape of ``tensor``
     """
     return torch.tensor(tensor.shape)

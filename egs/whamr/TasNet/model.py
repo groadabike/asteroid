@@ -5,8 +5,8 @@ from torch import nn
 
 from asteroid import torch_utils
 from asteroid import torch_utils
-from asteroid.filterbanks import Encoder, Decoder, FreeFB
-from asteroid.masknn.blocks import SingleRNN
+from asteroid_filterbanks import Encoder, Decoder, FreeFB
+from asteroid.masknn.recurrent import SingleRNN
 from asteroid.engine.optimizers import make_optimizer
 from asteroid.masknn.norms import GlobLN
 

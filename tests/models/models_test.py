@@ -6,6 +6,8 @@ import soundfile as sf
 import asteroid
 from asteroid import models
 from asteroid.filterbanks import make_enc_dec
+from asteroid.dsp import LambdaOverlapAdd
+from asteroid.separate import separate
 from asteroid.models import (
     ConvTasNet,
     DCCRNet,
@@ -18,6 +20,12 @@ from asteroid.models import (
     SuDORMRFNet,
 )
 from asteroid.models.base_models import BaseModel
+
+
+def test_set_sample_rate_raises_warning():
+    model = BaseModel(sample_rate=8000.0)
+    with pytest.warns(UserWarning):
+        model.sample_rate = 16000.0
 
 
 def test_convtasnet_sep():
@@ -131,6 +139,7 @@ def test_sudormrf_imp():
     )
 
 
+@pytest.mark.filterwarnings("ignore: DPTransformer input dim")
 @pytest.mark.parametrize("fb", ["free", "stft", "analytic_free", "param_sinc"])
 def test_dptnet(fb):
     _default_test_model(DPTNet(2, ff_hid=10, chunk_size=4, n_repeats=2, fb_name=fb))
@@ -138,11 +147,32 @@ def test_dptnet(fb):
 
 def test_dcunet():
     _, istft = make_enc_dec("stft", 512, 512)
-    _default_test_model(DCUNet("DCUNet-10"), input_samples=istft(torch.zeros((514, 17))).shape[0])
+    input_samples = istft(torch.zeros((514, 17))).shape[0]
+    _default_test_model(DCUNet("DCUNet-10"), input_samples=input_samples)
+    _default_test_model(DCUNet("DCUNet-10", n_src=2), input_samples=input_samples)
+
+    # DCUMaskNet should fail with wrong freqency dimensions
+    DCUNet("mini").masker(torch.zeros((1, 9, 17), dtype=torch.complex64))
+    with pytest.raises(TypeError):
+        DCUNet("mini").masker(torch.zeros((1, 42, 17), dtype=torch.complex64))
+
+    # DCUMaskNet should fail with wrong time dimensions if fix_length_mode is not used
+    DCUNet("mini", fix_length_mode="pad").masker(torch.zeros((1, 9, 17), dtype=torch.complex64))
+    DCUNet("mini", fix_length_mode="trim").masker(torch.zeros((1, 9, 17), dtype=torch.complex64))
+    with pytest.raises(TypeError):
+        DCUNet("mini").masker(torch.zeros((1, 9, 16), dtype=torch.complex64))
 
 
 def test_dccrnet():
-    _default_test_model(DCCRNet("DCCRN-CL"), input_samples=1300)
+    _, istft = make_enc_dec("stft", 512, 512)
+    input_samples = istft(torch.zeros((514, 16))).shape[0]
+    _default_test_model(DCCRNet("DCCRN-CL"), input_samples=input_samples)
+    _default_test_model(DCCRNet("DCCRN-CL", n_src=2), input_samples=input_samples)
+
+    # DCCRMaskNet should fail with wrong input dimensions
+    DCCRNet("mini").masker(torch.zeros((1, 256, 3), dtype=torch.complex64))
+    with pytest.raises(TypeError):
+        DCCRNet("mini").masker(torch.zeros((1, 42, 3), dtype=torch.complex64))
 
 
 def _default_test_model(model, input_samples=801):
@@ -191,11 +221,31 @@ def test_show():
     asteroid.show_available_models()
 
 
+def test_available_models():
+    all_models = asteroid.available_models()
+
+
 @pytest.mark.parametrize("fb", ["free", "stft", "analytic_free", "param_sinc"])
 def test_demask(fb):
-    model = DeMask(fb_type=fb)
+    model = DeMask(fb_name=fb)
     test_input = torch.randn(1, 801)
 
     model_conf = model.serialize()
     reconstructed_model = DeMask.from_pretrained(model_conf)
     assert_allclose(model(test_input), reconstructed_model(test_input))
+
+
+def test_separate():
+    nnet = ConvTasNet(
+        n_src=2,
+        n_repeats=2,
+        n_blocks=3,
+        bn_chan=16,
+        hid_chan=4,
+        skip_chan=8,
+        n_filters=32,
+    )
+    # Test torch input
+    wav = torch.rand(1, 1, 8000)
+    model = LambdaOverlapAdd(nnet, None, window_size=1000)
+    out = separate(model, wav)

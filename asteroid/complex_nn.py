@@ -1,4 +1,4 @@
-"""Complex building blocks that work with _PyTorch native_ complex tensors, i.e.
+"""Complex building blocks that work with PyTorch native (!) complex tensors, i.e.
 dtypes complex64/complex128, or tensors for which `.is_complex()` returns True.
 
 Note that Asteroid code has two other representations of complex numbers:
@@ -8,13 +8,14 @@ Note that Asteroid code has two other representations of complex numbers:
 - Asteroid style representation, identical to the Torchaudio representation, but
   with the last dimension concatenated: tensor([r1, r2, ..., rn, i1, i2, ..., in]).
   The concatenated (2 * n) dimension may be at an arbitrary position, i.e. the tensor
-  is of shape [..., 2 * n, ...].  See `asteroid.filterbanks.transforms` for details.
+  is of shape [..., 2 * n, ...].  See `asteroid_filterbanks.transforms` for details.
 """
 import functools
 import torch
-import torchaudio
+from asteroid_filterbanks import transforms
+from .utils.torch_utils import script_if_tracing
+from .utils.deprecation_utils import mark_deprecated
 from torch import nn
-from asteroid.filterbanks import transforms
 
 
 # Alias to denote PyTorch native complex tensor (complex64/complex128).
@@ -27,10 +28,21 @@ def is_torch_complex(x):
 
 
 def torch_complex_from_magphase(mag, phase):
-    return as_torch_complex((mag * torch.cos(phase), mag * torch.sin(phase)))
+    return torch.view_as_complex(
+        torch.stack((mag * torch.cos(phase), mag * torch.sin(phase)), dim=-1)
+    )
 
 
-def as_torch_complex(x, asteroid_dim=-2):
+def torch_complex_from_reim(re, im):
+    return torch.view_as_complex(torch.stack([re, im], dim=-1))
+
+
+@mark_deprecated(
+    "Use `torch.view_as_complex`, `torch_complex_from_magphase`, `torch_complex_from_reim` or "
+    "`asteroid_filterbanks.transforms.from_torch_complex` instead."
+)
+@script_if_tracing
+def as_torch_complex(x, asteroid_dim: int = -2):
     """Convert complex `x` to complex. Input may be one of:
 
     - PyTorch native complex
@@ -45,14 +57,14 @@ def as_torch_complex(x, asteroid_dim=-2):
         ValueError: If type of `x` is not understood.
     """
     if isinstance(x, (list, tuple)) and len(x) == 2:
-        return torch.view_as_complex(torch.stack(x, dim=-1))
+        return torch_complex_from_reim(*x)
     elif is_torch_complex(x):
         return x
     else:
         is_torchaudio_complex = transforms.is_torchaudio_complex(x)
         is_asteroid_complex = transforms.is_asteroid_complex(x, asteroid_dim)
         if is_torchaudio_complex and is_asteroid_complex:
-            raise ValueError(
+            raise RuntimeError(
                 f"Tensor of shape {x.shape} is both a valid Torchaudio-style and "
                 "Asteroid-style complex. PyTorch complex conversion is ambiguous."
             )
@@ -61,7 +73,7 @@ def as_torch_complex(x, asteroid_dim=-2):
         elif is_asteroid_complex:
             return torch.view_as_complex(transforms.to_torchaudio(x, asteroid_dim))
         else:
-            raise ValueError(
+            raise RuntimeError(
                 f"Do not know how to convert tensor of shape {x.shape}, dtype={x.dtype} to complex"
             )
 
@@ -77,7 +89,7 @@ def on_reim(f):
 
     @functools.wraps(f)
     def cf(x):
-        return as_torch_complex((f(x.real), f(x.imag)))
+        return torch_complex_from_reim(f(x.real), f(x.imag))
 
     # functools.wraps keeps the original name of `f`, which might be confusing,
     # since we are creating a new function that behaves differently.
@@ -101,20 +113,20 @@ class OnReIm(nn.Module):
         self.im_module = module_cls(*args, **kwargs)
 
     def forward(self, x):
-        return as_torch_complex((self.re_module(x.real), self.im_module(x.imag)))
+        return torch_complex_from_reim(self.re_module(x.real), self.im_module(x.imag))
 
 
 class ComplexMultiplicationWrapper(nn.Module):
     """Make a complex-valued module `F` from a real-valued module `f` by applying
     complex multiplication rules:
 
-        F(a + i b) = f1(a) - f1(b) + i (f2(b) + f2(a))
+    F(a + i b) = f1(a) - f1(b) + i (f2(b) + f2(a))
 
     where `f1`, `f2` are instances of `f` that do *not* share weights.
 
     Args:
         module_cls (callable): A class or function that returns a Torch module/functional.
-            Constructor of `f` in the formula above.  Called 2x with *args, **kwargs,
+            Constructor of `f` in the formula above.  Called 2x with `*args`, `**kwargs`,
             to construct the real and imaginary component modules.
     """
 
@@ -124,12 +136,67 @@ class ComplexMultiplicationWrapper(nn.Module):
         self.im_module = module_cls(*args, **kwargs)
 
     def forward(self, x: ComplexTensor) -> ComplexTensor:
-        return as_torch_complex(
-            (
-                self.re_module(x.real) - self.im_module(x.imag),
-                self.re_module(x.imag) + self.im_module(x.real),
-            )
+        return torch_complex_from_reim(
+            self.re_module(x.real) - self.im_module(x.imag),
+            self.re_module(x.imag) + self.im_module(x.real),
         )
+
+
+class ComplexSingleRNN(nn.Module):
+    """Module for a complex RNN block.
+
+    This is similar to :cls:`asteroid.masknn.recurrent.SingleRNN` but uses complex
+    multiplication as described in [1]. Arguments are identical to those of `SingleRNN`,
+    except for `dropout`, which is not yet supported.
+
+    Args:
+        rnn_type (str): Select from ``'RNN'``, ``'LSTM'``, ``'GRU'``. Can
+            also be passed in lowercase letters.
+        input_size (int): Dimension of the input feature. The input should have
+            shape [batch, seq_len, input_size].
+        hidden_size (int): Dimension of the hidden state.
+        n_layers (int, optional): Number of layers used in RNN. Default is 1.
+        bidirectional (bool, optional): Whether the RNN layers are
+            bidirectional. Default is ``False``.
+        dropout: Not yet supported.
+
+    References
+        [1] : "DCCRN: Deep Complex Convolution Recurrent Network for Phase-Aware Speech Enhancement",
+        Yanxin Hu et al. https://arxiv.org/abs/2008.00264
+    """
+
+    def __init__(
+        self, rnn_type, input_size, hidden_size, n_layers=1, dropout=0, bidirectional=False
+    ):
+        assert not (dropout and n_layers > 1), "Dropout is not yet supported for complex RNN"
+        super().__init__()
+        from .masknn.recurrent import SingleRNN  # Avoid circual import
+
+        kwargs = {
+            "rnn_type": rnn_type,
+            "hidden_size": hidden_size,
+            "n_layers": 1,
+            "dropout": 0,
+            "bidirectional": bidirectional,
+        }
+        first_rnn = ComplexMultiplicationWrapper(SingleRNN, input_size=input_size, **kwargs)
+        self.rnns = torch.nn.ModuleList([first_rnn])
+        for _ in range(n_layers - 1):
+            self.rnns.append(
+                ComplexMultiplicationWrapper(
+                    SingleRNN, input_size=first_rnn.re_module.output_size, **kwargs
+                )
+            )
+
+    @property
+    def output_size(self):
+        return self.rnns[-1].re_module.output_size
+
+    def forward(self, x: ComplexTensor) -> ComplexTensor:
+        """Input shape [batch, seq, feats]"""
+        for rnn in self.rnns:
+            x = rnn(x)
+        return x
 
 
 ComplexConv2d = functools.partial(ComplexMultiplicationWrapper, nn.Conv2d)
@@ -150,24 +217,24 @@ class BoundComplexMask(nn.Module):
 def bound_complex_mask(mask: ComplexTensor, bound_type="tanh"):
     r"""Bound a complex mask, as proposed in [1], section 3.2.
 
-    Valid bound types, for a complex mask $M = |M| ⋅ e^{i φ(M)}$:
+    Valid bound types, for a complex mask :math:`M = |M| ⋅ e^{i φ(M)}`:
 
-    - Unbounded ("UBD"): $M_{\mathrm{UBD}} = M$
-    - Sigmoid ("BDSS"): $M_{\mathrm{BDSS}} = σ(|M|) e^{i σ(φ(M))}$
-    - Tanh ("BDT"): $M_{\mathrm{BDT}} = \mathrm{tanh}(|M|) e^{i φ(M)}$
+    - Unbounded ("UBD"): :math:`M_{\mathrm{UBD}} = M`
+    - Sigmoid ("BDSS"): :math:`M_{\mathrm{BDSS}} = σ(|M|) e^{i σ(φ(M))}`
+    - Tanh ("BDT"): :math:`M_{\mathrm{BDT}} = \mathrm{tanh}(|M|) e^{i φ(M)}`
 
     Args:
         bound_type (str or None): The type of bound to use, either of
             "tanh"/"bdt" (default), "sigmoid"/"bdss" or None/"bdt".
 
     References
-        - [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
+        [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
         Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
     """
     if bound_type in {"BDSS", "sigmoid"}:
         return on_reim(torch.sigmoid)(mask)
     elif bound_type in {"BDT", "tanh", "UBD", None}:
-        mask_mag, mask_phase = torchaudio.functional.magphase(torch.view_as_real(mask))
+        mask_mag, mask_phase = transforms.magphase(transforms.from_torch_complex(mask))
         if bound_type in {"BDT", "tanh"}:
             mask_mag_bounded = torch.tanh(mask_mag)
         else:

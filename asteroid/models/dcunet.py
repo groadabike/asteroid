@@ -1,23 +1,21 @@
-import torch
-
-from .. import complex_nn
-from ..filterbanks import make_enc_dec
-from ..filterbanks.transforms import from_torchaudio
+from asteroid_filterbanks import make_enc_dec
+from asteroid_filterbanks.transforms import from_torch_complex, to_torch_complex
 from ..masknn.convolutional import DCUMaskNet
 from .base_models import BaseEncoderMaskerDecoder
 
 
-class BaseDCUNet(BaseEncoderMaskerDecoder):  # CHECK-JIT
+class BaseDCUNet(BaseEncoderMaskerDecoder):
     """Base class for ``DCUNet`` and ``DCCRNet`` classes.
 
     Args:
+        architecture (str): The architecture to use. Overriden by subclasses.
         stft_kernel_size (int): STFT frame length to use
         stft_stride (int, optional): STFT hop length to use.
         sample_rate (float): Sampling rate of the model.
-
+        masknet_kwargs (optional): Passed to the masknet constructor.
     """
 
-    masknet_class = DCUMaskNet
+    masknet_class = NotImplemented
 
     def __init__(
         self,
@@ -25,7 +23,7 @@ class BaseDCUNet(BaseEncoderMaskerDecoder):  # CHECK-JIT
         stft_kernel_size=512,
         stft_stride=None,
         sample_rate=16000.0,
-        masknet_kwargs=None,
+        **masknet_kwargs,
     ):
         self.architecture = architecture
         self.stft_kernel_size = stft_kernel_size
@@ -39,14 +37,16 @@ class BaseDCUNet(BaseEncoderMaskerDecoder):  # CHECK-JIT
             stride=stft_stride,
             sample_rate=sample_rate,
         )
-        masker = self.masknet_class.default_architecture(architecture, **(masknet_kwargs or {}))
+        masker = self.masknet_class.default_architecture(architecture, **masknet_kwargs)
         super().__init__(encoder, masker, decoder)
 
-    def postprocess_encoded(self, tf_rep):
-        return complex_nn.as_torch_complex(tf_rep)
+    def forward_encoder(self, wav):
+        tf_rep = self.encoder(wav)
+        return to_torch_complex(tf_rep)
 
-    def postprocess_masked(self, masked_tf_rep):
-        return from_torchaudio(torch.view_as_real(masked_tf_rep))
+    def apply_masks(self, tf_rep, est_masks):
+        masked_tf_rep = est_masks * tf_rep.unsqueeze(1)
+        return from_torch_complex(masked_tf_rep)
 
     def get_model_args(self):
         """Arguments needed to re-instantiate the model."""
@@ -55,7 +55,7 @@ class BaseDCUNet(BaseEncoderMaskerDecoder):  # CHECK-JIT
             "stft_kernel_size": self.stft_kernel_size,
             "stft_stride": self.stft_stride,
             "sample_rate": self.sample_rate,
-            "masknet_kwargs": self.masknet_kwargs,
+            **self.masknet_kwargs,
         }
         return model_args
 
@@ -68,10 +68,12 @@ class DCUNet(BaseDCUNet):
             "DCUNet-10", "DCUNet-16", "DCUNet-20", "Large-DCUNet-20".
         stft_kernel_size (int): STFT frame length to use
         stft_stride (int, optional): STFT hop length to use.
+        sample_rate (float): Sampling rate of the model.
+        masknet_kwargs (optional): Passed to :class:`DCUMaskNet`
 
     References
         - [1] : "Phase-aware Speech Enhancement with Deep Complex U-Net",
-        Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
+          Hyeong-Seok Choi et al. https://arxiv.org/abs/1903.03107
     """
 
     masknet_class = DCUMaskNet

@@ -21,15 +21,16 @@ class System(pl.LightningModule):
         val_loader (torch.utils.data.DataLoader): Validation dataloader.
         scheduler (torch.optim.lr_scheduler._LRScheduler): Instance, or list
             of learning rate schedulers. Also supports dict or list of dict as
-            `{"interval": "batch", "scheduler": sched}` where `interval=="batch"`
-            for batch-wise schedulers and `interval=="epoch"` for classical ones.
+            ``{"interval": "step", "scheduler": sched}`` where ``interval=="step"``
+            for step-wise schedulers and ``interval=="epoch"`` for classical ones.
         config: Anything to be saved with the checkpoints during training.
             The config dictionary to re-instantiate the run for example.
-    .. note:: By default, `training_step` (used by `pytorch-lightning` in the
-        training loop) and `validation_step` (used for the validation loop)
-        share `common_step`. If you want different behavior for the training
-        loop and the validation loop, overwrite both `training_step` and
-        `validation_step` instead.
+
+    .. note:: By default, ``training_step`` (used by ``pytorch-lightning`` in the
+        training loop) and ``validation_step`` (used for the validation loop)
+        share ``common_step``. If you want different behavior for the training
+        loop and the validation loop, overwrite both ``training_step`` and
+        ``validation_step`` instead.
     """
 
     def __init__(
@@ -83,11 +84,12 @@ class System(pl.LightningModule):
         Returns:
             :class:`torch.Tensor` : The loss value on this batch.
 
-        .. note:: This is typically the method to overwrite when subclassing
-            `System`. If the training and validation steps are somehow
-            different (except for loss.backward() and optimzer.step()),
-            the argument `train` can be used to switch behavior.
-            Otherwise, `training_step` and `validation_step` can be overwriten.
+        .. note::
+            This is typically the method to overwrite when subclassing
+            ``System``. If the training and validation steps are somehow
+            different (except for ``loss.backward()`` and ``optimzer.step()``),
+            the argument ``train`` can be used to switch behavior.
+            Otherwise, ``training_step`` and ``validation_step`` can be overwriten.
         """
         inputs, targets = batch
         est_targets = self(inputs)
@@ -115,15 +117,6 @@ class System(pl.LightningModule):
         loss = self.common_step(batch, batch_nb, train=True)
         tensorboard_logs = {"train_loss": loss}
         return {"loss": loss, "log": tensorboard_logs}
-
-    def optimizer_step(self, *args, **kwargs) -> None:
-        if self.scheduler is not None:
-            if not isinstance(self.scheduler, (list, tuple)):
-                self.scheduler = [self.scheduler]  # support multiple schedulers
-            for sched in self.scheduler:
-                if isinstance(sched, dict) and sched["interval"] == "batch":
-                    sched["scheduler"].step()  # call step on each batch scheduler
-        super().optimizer_step(*args, **kwargs)
 
     def validation_step(self, batch, batch_nb):
         """Need to overwrite PL validation_step to do validation.
@@ -163,56 +156,61 @@ class System(pl.LightningModule):
 
     def configure_optimizers(self):
         """Initialize optimizers, batch-wise and epoch-wise schedulers."""
+        if self.scheduler is None:
+            return self.optimizer
 
-        if self.scheduler is not None:
-            if not isinstance(self.scheduler, (list, tuple)):
-                self.scheduler = [self.scheduler]  # support multiple schedulers
-            epoch_schedulers = []
-            for sched in self.scheduler:
-                if not isinstance(sched, dict):
-                    epoch_schedulers.append(sched)
-                else:
-                    assert sched["interval"] in [
-                        "batch",
-                        "epoch",
-                    ], "Scheduler interval should be either batch or epoch"
-                    if sched["interval"] == "epoch":
-                        epoch_schedulers.append(sched)
-            return [self.optimizer], epoch_schedulers
-        return self.optimizer
+        if not isinstance(self.scheduler, (list, tuple)):
+            self.scheduler = [self.scheduler]  # support multiple schedulers
+
+        epoch_schedulers = []
+        for sched in self.scheduler:
+            if not isinstance(sched, dict):
+                epoch_schedulers.append(sched)
+            else:
+                # Backward compat
+                if sched["interval"] == "batch":
+                    sched["interval"] = "step"
+                assert sched["interval"] in [
+                    "epoch",
+                    "step",
+                ], "Scheduler interval should be either step or epoch"
+                epoch_schedulers.append(sched)
+        return [self.optimizer], epoch_schedulers
 
     def train_dataloader(self):
+        """Training dataloader"""
         return self.train_loader
 
     def val_dataloader(self):
+        """Validation dataloader"""
         return self.val_loader
 
     def on_save_checkpoint(self, checkpoint):
-        """ Overwrite if you want to save more things in the checkpoint."""
+        """Overwrite if you want to save more things in the checkpoint."""
         checkpoint["training_config"] = self.config
         return checkpoint
 
     def on_batch_start(self, batch):
-        """ Overwrite if needed. Called by pytorch-lightning"""
+        """Overwrite if needed. Called by pytorch-lightning"""
         pass
 
     def on_batch_end(self):
-        """ Overwrite if needed. Called by pytorch-lightning"""
+        """Overwrite if needed. Called by pytorch-lightning"""
         pass
 
     def on_epoch_start(self):
-        """ Overwrite if needed. Called by pytorch-lightning"""
+        """Overwrite if needed. Called by pytorch-lightning"""
         pass
 
     def on_epoch_end(self):
-        """ Overwrite if needed. Called by pytorch-lightning"""
+        """Overwrite if needed. Called by pytorch-lightning"""
         pass
 
     @staticmethod
     def config_to_hparams(dic):
         """Sanitizes the config dict to be handled correctly by torch
-        SummaryWriter. It flatten the config dict, converts `None` to
-         ``'None'`` and any list and tuple into torch.Tensors.
+        SummaryWriter. It flatten the config dict, converts ``None`` to
+        ``"None"`` and any list and tuple into torch.Tensors.
 
         Args:
             dic (dict): Dictionary to be transformed.

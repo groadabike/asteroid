@@ -7,7 +7,7 @@ from torch.utils import data
 from torch.nn import functional as F
 import pandas as pd
 from typing import Union
-from asteroid.filterbanks import Encoder, Decoder, STFTFB
+from asteroid_filterbanks import Encoder, Decoder, STFTFB
 
 
 def get_frames(video):
@@ -120,7 +120,7 @@ class AVSpeechDataset(data.Dataset):
         n_src (int): number of sources.
 
     References
-        - [1]: "Looking to Listen at the Cocktail Party: A Speaker-Independent Audio-Visual
+        [1] "Looking to Listen at the Cocktail Party: A Speaker-Independent Audio-Visual
         Model for Speech Separation" Ephrat et. al https://arxiv.org/abs/1804.03619
     """
 

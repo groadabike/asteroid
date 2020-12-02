@@ -2,7 +2,7 @@ import torch
 from torch.utils import data
 import numpy as np
 import soundfile as sf
-from asteroid.data.wham_dataset import normalize_tensor_wav
+from .wham_dataset import normalize_tensor_wav
 
 from .wsj0_mix import wsj0_license
 
@@ -60,8 +60,8 @@ class SmsWsjDataset(data.Dataset):
             normalized with the standard deviation of the mixture.
 
     References
-        - "SMS-WSJ: Database, performance measures, and baseline recipe for
-         multi-channel source separation and recognition", Drude et al. 2019
+        "SMS-WSJ: Database, performance measures, and baseline recipe for
+        multi-channel source separation and recognition", Drude et al. 2019
     """
 
     dataset_name = "SMS_WSJ"

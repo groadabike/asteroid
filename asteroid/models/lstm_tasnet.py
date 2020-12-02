@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from copy import deepcopy
 
-from ..filterbanks import make_enc_dec
+from asteroid_filterbanks import make_enc_dec
 from ..masknn import LSTMMasker
 from .base_models import BaseEncoderMaskerDecoder
 
@@ -38,7 +38,7 @@ class LSTMTasNet(BaseEncoderMaskerDecoder):
 
     References
         - [1]: Yi Luo et al. "Real-time Single-channel Dereverberation and Separation
-        with Time-domain Audio Separation Network", Interspeech 2018
+          with Time-domain Audio Separation Network", Interspeech 2018
     """
 
     def __init__(

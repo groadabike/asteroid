@@ -4,14 +4,14 @@
 **The PyTorch-based audio source separation toolkit for researchers.**
 
 [![PyPI Status](https://badge.fury.io/py/asteroid.svg)](https://badge.fury.io/py/asteroid)
-[![Build Status](https://github.com/mpariente/asteroid/workflows/CI/badge.svg)](https://github.com/mpariente/asteroid/actions?query=workflow%3ACI+branch%3Amaster+event%3Apush)
+[![Build Status](https://github.com/asteroid-team/asteroid/workflows/CI/badge.svg)](https://github.com/asteroid-team/asteroid/actions?query=workflow%3ACI+branch%3Amaster+event%3Apush)
 [![codecov][codecov-badge]][codecov]
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Documentation Status](https://img.shields.io/badge/docs-0.3.3-blue)](https://asteroid.readthedocs.io/en/v0.3.3/)
-[![Latest Docs Status](https://github.com/mpariente/asteroid/workflows/Latest%20docs/badge.svg)](https://mpariente.github.io/asteroid/)
+[![Documentation Status](https://img.shields.io/badge/docs-0.4.0-blue)](https://asteroid.readthedocs.io/en/v0.4.0/)
+[![Latest Docs Status](https://github.com/asteroid-team/asteroid/workflows/Latest%20docs/badge.svg)](https://asteroid-team.github.io/asteroid/)
 
 
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/mpariente/asteroid/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/asteroid-team/asteroid/pulls)
 [![Python Versions](https://img.shields.io/pypi/pyversions/asteroid.svg)](https://pypi.org/project/asteroid/)
 [![PyPI Status](https://pepy.tech/badge/asteroid)](https://pepy.tech/project/asteroid)
 [![Slack][slack-badge]][slack-invite]
@@ -48,29 +48,37 @@ so hop on and help us!
 
 ## Installation
 ([↑up to contents](#contents))
-In order to install Asteroid, clone the repo and install it using
-pip or python :
+To install Asteroid, clone the repo and install it using
+conda, pip or python :
 ```bash
-git clone https://github.com/mpariente/asteroid
+# First clone and enter the repo
+git clone https://github.com/asteroid-team/asteroid
 cd asteroid
-# Install install-required deps
-pip install numpy Cython
+```
+
+- With `pip`
+```bash
 # Install with pip in editable mode
 pip install -e .
 # Or, install with python in dev mode
 # python setup.py develop
 ```
-Asteroid is also on PyPI, you can install the latest release
-with
+- With conda (if you don't already have conda, see [here][miniconda].)
 ```bash
-pip install numpy Cython
+conda env create -f environment.yml
+conda activate asteroid
+```
+
+- Asteroid is also on PyPI, you can install the latest release with
+```bash
 pip install asteroid
 ```
 
 ## Tutorials
 ([↑up to contents](#contents))
 Here is a list of notebooks showing example usage of Asteroid's features.
-- [Getting started with Asteroid](./notebooks/01_AsteroidGettingStarted.ipynb)
+- [Getting started with Asteroid](./notebooks/00_GettingStarted.ipynb)
+- [Introduction and Overview](./notebooks/01_APIOverview.ipynb)
 - [Filterbank API](./notebooks/02_Filterbank.ipynb)
 - [Permutation invariant training wrapper `PITLossWrapper`](./notebooks/03_PITLossWrapper.ipynb)
 - [Process large wav files](./notebooks/04_ProcessLargeAudioFiles.ipynb)
@@ -191,13 +199,12 @@ If you loved using Asteroid and you want to cite us, use this :
 ```
 
 [comment]: <> (Badge)
-[travis]: https://travis-ci.com/mpariente/asteroid
-[travis-badge]: https://travis-ci.com/mpariente/asteroid.svg?branch=master
-[codecov-badge]: https://codecov.io/gh/mpariente/asteroid/branch/master/graph/badge.svg
-[codecov]: https://codecov.io/gh/mpariente/asteroid
+[miniconda]: https://conda.io/miniconda.html
+[codecov-badge]: https://codecov.io/gh/asteroid-team/asteroid/branch/master/graph/badge.svg
+[codecov]: https://codecov.io/gh/asteroid-team/asteroid
 [slack-badge]: https://img.shields.io/badge/slack-chat-green.svg?logo=slack
 [slack-invite]: https://join.slack.com/t/asteroid-dev/shared_invite/zt-cn9y85t3-QNHXKD1Et7qoyzu1Ji5bcA
 
 [comment]: <> (Others)
-[issue]: https://github.com/mpariente/asteroid/issues/new
-[pr]: https://github.com/mpariente/asteroid/compare
+[issue]: https://github.com/asteroid-team/asteroid/issues/new
+[pr]: https://github.com/asteroid-team/asteroid/compare

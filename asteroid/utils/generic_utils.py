@@ -8,11 +8,11 @@ def has_arg(fn, name):
 
     Args:
         fn (callable): Callable to inspect.
-        name (str): Check if `fn` can be called with `name` as a keyword
+        name (str): Check if ``fn`` can be called with ``name`` as a keyword
             argument.
 
     Returns:
-        bool: whether `fn` accepts a `name` keyword argument.
+        bool: whether ``fn`` accepts a ``name`` keyword argument.
     """
     signature = inspect.signature(fn)
     parameter = signature.parameters.get(name)
@@ -26,8 +26,8 @@ def has_arg(fn, name):
 
 def flatten_dict(d, parent_key="", sep="_"):
     """Flattens a dictionary into a single-level dictionary while preserving
-    parent keys. Taken from https://stackoverflow.com/questions/6027558/
-    flatten-nested-dictionaries-compressing-keys?answertab=votes#tab-top
+    parent keys. Taken from
+    `SO <https://stackoverflow.com/questions/6027558/flatten-nested-dictionaries-compressing-keys>`_
 
     Args:
         d (MutableMapping): Dictionary to be flattened.
@@ -87,13 +87,13 @@ def unet_decoder_args(encoders, *, skip_connections):
     given the arguments used to construct the encoder.
 
     Args:
-        encoders (list of length `N` of tuples of (in_chan, out_chan, kernel_size, stride, padding)):
+        encoders (tuple of length `N` of tuples of (in_chan, out_chan, kernel_size, stride, padding)):
             List of arguments used to construct the encoders
         skip_connections (bool): Whether to include skip connections in the
             calculation of decoder input channels.
 
     Return:
-        list of length `N` of tuples of (in_chan, out_chan, kernel_size, stride, padding):
+        tuple of length `N` of tuples of (in_chan, out_chan, kernel_size, stride, padding):
             Arguments to be used to construct decoders
     """
     decoder_args = []
@@ -105,4 +105,4 @@ def unet_decoder_args(encoders, *, skip_connections):
         decoder_args.append(
             (enc_out_chan + skip_in_chan, enc_in_chan, enc_kernel_size, enc_stride, enc_padding)
         )
-    return decoder_args
+    return tuple(decoder_args)

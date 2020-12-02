@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-asteroid_version = "0.3.4"
+asteroid_version = "0.4.0"
 
 with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -10,7 +10,7 @@ setup(
     version=asteroid_version,
     author="Manuel Pariente",
     author_email="manuel.pariente@loria.fr",
-    url="https://github.com/mpariente/asteroid",
+    url="https://github.com/asteroid-team/asteroid",
     description="PyTorch-based audio source separation toolkit",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -27,6 +27,8 @@ setup(
         "soundfile",
         "pb_bss_eval",
         "torch_stoi",
+        "asteroid-filterbanks",
+        "librosa",
     ],
     extras_require={
         "tests": ["pytest"],
@@ -36,6 +38,7 @@ setup(
             "asteroid-upload=asteroid.scripts.asteroid_cli:upload",
             "asteroid-infer=asteroid.scripts.asteroid_cli:infer",
             "asteroid-register-sr=asteroid.scripts.asteroid_cli:register_sample_rate",
+            "asteroid-versions=asteroid.scripts.asteroid_versions:print_versions",
         ],
     },
     packages=find_packages(),

@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.nn.modules.loss import _Loss
-from asteroid.filterbanks import STFTFB, Encoder
-from asteroid.filterbanks.transforms import take_mag
+from asteroid_filterbanks import STFTFB, Encoder
+from asteroid_filterbanks.transforms import mag
 
 
 class SingleSrcMultiScaleSpectral(_Loss):
-    """Measure multi-scale spectral loss as described in [1]
+    r"""Measure multi-scale spectral loss as described in [1]
 
     Args:
         n_filters (list): list containing the number of filter desired for
@@ -17,11 +17,8 @@ class SingleSrcMultiScaleSpectral(_Loss):
             each STFT
 
     Shape:
-        est_targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of target estimates.
-        targets (:class:`torch.Tensor`): Expected shape [batch, time].
-            Batch of training targets.
-        alpha (float) : Weighting factor for the log term
+        - est_targets : :math:`(batch, time)`.
+        - targets: :math:`(batch, time)`.
 
     Returns:
         :class:`torch.Tensor`: with shape [batch]
@@ -44,7 +41,7 @@ class SingleSrcMultiScaleSpectral(_Loss):
         >>> loss = loss_func(est_targets, targets)
 
     References
-        - [1] Jesse Engel and Lamtharn (Hanoi) Hantrakul and Chenjie Gu and
+        [1] Jesse Engel and Lamtharn (Hanoi) Hantrakul and Chenjie Gu and
         Adam Roberts "DDSP: Differentiable Digital Signal Processing" ICLR 2020.
     """
 
@@ -80,8 +77,8 @@ class SingleSrcMultiScaleSpectral(_Loss):
 
     def compute_spectral_loss(self, encoder, est_target, target, EPS=1e-8):
         batch_size = est_target.shape[0]
-        spect_est_target = take_mag(encoder(est_target)).view(batch_size, -1)
-        spect_target = take_mag(encoder(target)).view(batch_size, -1)
+        spect_est_target = mag(encoder(est_target)).view(batch_size, -1)
+        spect_target = mag(encoder(target)).view(batch_size, -1)
         linear_loss = self.norm1(spect_est_target - spect_target)
         log_loss = self.norm1(torch.log(spect_est_target + EPS) - torch.log(spect_target + EPS))
         return linear_loss + self.alpha * log_loss
