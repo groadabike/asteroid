@@ -7,7 +7,7 @@ from .musdb18_dataset import MUSDB18Dataset
 from .sms_wsj_dataset import SmsWsjDataset
 from .kinect_wsj import KinectWsjMixDataset
 from .fuss_dataset import FUSSDataset
-from .dampvsep_dataset import DAMPVSEPSinglesDataset
+from .dampvsep_dataset import DAMPVSEPSinglesDataset, DAMPVSEPSinglesDatasetSegmented
 
 __all__ = [
     "WhamDataset",
@@ -20,4 +20,5 @@ __all__ = [
     "KinectWsjMixDataset",
     "FUSSDataset",
     "DAMPVSEPSinglesDataset",
+    "DAMPVSEPSinglesDatasetSegmented",
 ]

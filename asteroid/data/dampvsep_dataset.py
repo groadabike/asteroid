@@ -1,8 +1,8 @@
 from pathlib import Path
-
 import torch.utils.data
 import random
 import json
+import numpy as np
 
 
 class DAMPVSEPSinglesDataset(torch.utils.data.Dataset):
@@ -11,6 +11,8 @@ class DAMPVSEPSinglesDataset(torch.utils.data.Dataset):
     This dataset utilises one of the two preprocessed versions of DAMP-VSEP
     from https://github.com/groadabike/DAMP-VSEP-Singles aimed for
     SINGLE SINGER separation.
+    The samples are selected randomly, this means that there are cases where
+    the targets can be silent.
 
     The DAMP-VSEP dataset is hosted on Zenodo.
     https://zenodo.org/record/3553059
@@ -197,6 +199,171 @@ class DAMPVSEPSinglesDataset(torch.utils.data.Dataset):
             tracks = json.load(open(metadata_path, "r"))
         else:
             raise RuntimeError(f"Metadata file for {self.split} not found")
+        return tracks
+
+    def get_infos(self):
+        """Get dataset infos (for publishing models).
+
+        Returns:
+            dict, dataset infos with keys `dataset`, `task` and `licences`.
+        """
+        infos = dict()
+        infos["dataset"] = self.dataset_name
+        infos["task"] = self.task
+        infos["licenses"] = [dampvsep_license]
+        return infos
+
+
+class DAMPVSEPSinglesDatasetSegmented(torch.utils.data.Dataset):
+    """DAMP-VSEP vocal separation dataset
+
+    This dataset utilises one of the two preprocessed versions of DAMP-VSEP
+    from https://github.com/groadabike/DAMP-VSEP-Singles aimed for
+    SINGLE SINGER separation.
+    The samples are constructed in advanced. Using vad, we discard all
+    regions with silent vocal.
+
+    The DAMP-VSEP dataset is hosted on Zenodo.
+    https://zenodo.org/record/3553059
+
+    Args:
+        root_path (str): Root path to DAMP-VSEP dataset.
+        task (str): one of ``'enh_vocal'``,``'separation'``.
+            * ``'enh_vocal'`` for vocal enhanced.
+            * ``'separation'`` for vocal and background separation.
+        split (str):  one of ``'train_english'``, ``'train_singles'``,
+            ``'valid'`` and ``'test'``.
+            Default to ``'train_singles'``.
+        sample_rate (int, optional): Sample rate of files in dataset.
+            Default 16000 Hz
+        segment (float, optional): Duration of segments in seconds,
+            Defaults to ``None`` which loads the full-length audio tracks.
+        source_augmentations (Composite, optional): Default to ``None``
+        mixture (str, optional): Whether to use the original mixture with non-linear effects
+            or remix sources. Default to original.
+            * ``'remix'`` for use addition to remix the sources.
+            * ``'original'`` for use the original mixture.
+
+    .. note:: There are 2 train set available:
+        1- train_english: Uses all English spoken song.
+            Duets are converted into 2 singles.
+        2- train_singles: Uses all singles performances, discarding all duets.
+    """
+
+    dataset_name = "DAMP-VSEP"
+
+    def __init__(
+        self,
+        root_path,
+        task,
+        split="train_singles",
+        sample_rate=16000,
+        segment=None,
+        source_augmentations=None,
+        mixture="original",
+    ):
+        self.sample_rate = sample_rate
+
+        self.root_path = Path(root_path).expanduser()
+        # Task detail parameters
+        assert task in ["enh_vocal", "separation"], "Task should be one of 'enh_vocal','separation'"
+        assert mixture in ["remix", "original"], "Mixture should be one of 'remix', 'original'"
+
+        self.task = task
+        if task == "enh_vocal":
+            self.target = ["vocal"]
+        elif task == "separation":
+            self.target = ["vocal", "background"]
+
+        self.split = split
+        self.tracks = self.get_tracks()
+        self.perf_key = [*self.tracks]  # list of performances samples keys
+
+        self.sample_rate = sample_rate
+        self.segment = segment
+        self.source_augmentations = source_augmentations
+        self.mixture = mixture
+        if self.mixture == "original" and self.split == "train_english":
+            raise Exception("The 'train_english' train can only accept 'remix' mixture.")
+
+    def __len__(self):
+        return len(self.tracks)
+
+    def _load_audio(self, path, start=0.0, duration=None, scaler=None, mean=0.0, std=1.0):
+        import librosa
+
+        # ignore warning related with
+        # https://github.com/librosa/librosa/issues/1015
+        # Soundfile can read OGG (vocal) but not M4A (background and mixture)
+        import warnings
+
+        warnings.filterwarnings("ignore", category=UserWarning)
+
+        x, _ = librosa.load(
+            path,
+            sr=self.sample_rate,
+            mono=True,
+            offset=start,
+            duration=self.segment,
+            dtype="float32",
+            res_type="polyphase",
+        )
+        if scaler:
+            x *= scaler
+        x -= mean
+        x /= std
+
+        return x
+
+    def __getitem__(self, index):
+        audio_sources = {}
+        perf = self.perf_key[index]
+        self.mixture_path = perf
+
+        mix_mean = 0.0
+        mix_std = 1.0
+
+        for source in ["vocal", "background"]:
+            x = self._load_audio(
+                self.root_path / self.tracks[perf][source],
+                mean=mix_mean,
+                std=mix_std,
+            )
+            if self.source_augmentations:
+                x = self.source_augmentations(x, self.sample_rate)
+            x = torch.from_numpy(x.T)
+
+            audio_sources[source] = x
+
+        # Prepare targets and mixture
+        audio_sources = torch.stack(
+            [wav for src, wav in audio_sources.items() if src in self.target], dim=0
+        )
+
+        if self.mixture == "remix":
+            audio_mix = audio_sources.sum(0)
+        else:
+            audio_mix = self._load_audio(
+                self.root_path / self.tracks[perf]["mixture"],
+                mean=mix_mean,
+                std=mix_std,
+            )
+
+        return audio_mix, audio_sources
+
+    def get_track_name(self, idx):
+        return self.perf_key[idx]
+
+    def get_tracks(self):
+        """
+        Loads metadata with tracks info.
+        Creates metadata if doesn't exist.
+        """
+        metadata_path = Path(f"metadata/{self.split}_dataset.json")
+        if metadata_path.exists():
+            tracks = json.load(open(metadata_path, "r"))
+        else:
+            raise Exception(f"Metadata file for {self.split} not found")
         return tracks
 
     def get_infos(self):
