@@ -40,7 +40,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
         >>> #train/1/other.wav ---------/
 
     Args:
-        root (str): Root path of dataset
+        root_path (str): Root path of dataset
         sources (:obj:`list` of :obj:`str`, optional): List of source names
             that composes the mixture.
             Defaults to MUSDB18 4 stem scenario: `vocals`, `drums`, `bass`, `other`.
@@ -54,7 +54,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
             list of tracks to be loaded, defaults to `None` (loads all tracks).
         segment (float, optional): Duration of segments in seconds,
             defaults to ``None`` which loads the full-length audio tracks.
-        samples_per_track (int, optional):
+        ex_per_track (int, optional):
             Number of samples yielded from each track, can be used to increase
             dataset size, defaults to `1`.
         random_segments (boolean, optional): Enables random offset for track segments.
@@ -65,7 +65,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
         sample_rate (int, optional): Samplerate of files in dataset.
 
     Attributes:
-        root (str): Root path of dataset
+        root_path (str): Root path of dataset
         sources (:obj:`list` of :obj:`str`, optional): List of source names.
             Defaults to MUSDB18 4 stem scenario: `vocals`, `drums`, `bass`, `other`.
         suffix (str, optional): Filename suffix, defaults to `.wav`.
@@ -74,7 +74,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
             list of tracks to be loaded, defaults to `None` (loads all tracks).
         segment (float, optional): Duration of segments in seconds,
             defaults to ``None`` which loads the full-length audio tracks.
-        samples_per_track (int, optional):
+        ex_per_track (int, optional):
             Number of samples yielded from each track, can be used to increase
             dataset size, defaults to `1`.
         random_segments (boolean, optional): Enables random offset for track segments.
@@ -90,25 +90,51 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
     """
 
     dataset_name = "MUSDB18"
+    validation_tracks = [
+        "Actions - One Minute Smile",
+        "Clara Berry And Wooldog - Waltz For My Victims",
+        "Johnny Lokke - Promises & Lies",
+        "Patrick Talbot - A Reason To Leave",
+        "Triviul - Angelsaint",
+        "Alexander Ross - Goodbye Bolero",
+        "Fergessen - Nos Palpitants",
+        "Leaf - Summerghost",
+        "Skelpolu - Human Mistakes",
+        "Young Griffo - Pennies",
+        "ANiMAL - Rockshow",
+        "James May - On The Line",
+        "Meaxic - Take A Step",
+        "Traffic Experiment - Sirens",
+    ]
 
     def __init__(
         self,
-        root,
+        root_path,
         sources=["vocals", "bass", "drums", "other"],
         targets=None,
         suffix=".wav",
         split="train",
         subset=None,
         segment=None,
-        samples_per_track=1,
+        ex_per_track=1,
         random_segments=False,
         random_track_mix=False,
         source_augmentations=lambda audio: audio,
         sample_rate=44100,
     ):
 
-        self.root = Path(root).expanduser()
+        self.root_path = Path(root_path).expanduser()
         self.split = split
+
+        self.exclude = None
+        self.subset = subset
+
+        if self.split == 'valid':
+            self.split = 'train'
+            self.subset = self.validation_tracks
+        elif self.split == 'train':
+            self.exclude = self.validation_tracks
+
         self.sample_rate = sample_rate
         self.segment = segment
         self.random_track_mix = random_track_mix
@@ -116,9 +142,11 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
         self.source_augmentations = source_augmentations
         self.sources = sources
         self.targets = targets
+        if self.targets is None:
+            self.targets = ["vocals", "bass", "drums", "other"]
+
         self.suffix = suffix
-        self.subset = subset
-        self.samples_per_track = samples_per_track
+        self.ex_per_track = ex_per_track
         self.tracks = list(self.get_tracks())
         if not self.tracks:
             raise RuntimeError("No tracks found.")
@@ -128,7 +156,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
         audio_sources = {}
 
         # get track_id
-        track_id = index // self.samples_per_track
+        track_id = index // self.ex_per_track
         if self.random_segments:
             start = random.uniform(0, self.tracks[track_id]["min_duration"] - self.segment)
         else:
@@ -164,6 +192,7 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
             audio = torch.tensor(audio.T, dtype=torch.float)
             # apply source-wise augmentations
             audio = self.source_augmentations(audio)
+            audio = audio.sum(dim=0)
             audio_sources[source] = audio
 
         # apply linear mix over source index=0
@@ -175,15 +204,19 @@ class MUSDB18Dataset(torch.utils.data.Dataset):
         return audio_mix, audio_sources
 
     def __len__(self):
-        return len(self.tracks) * self.samples_per_track
+        return len(self.tracks) * self.ex_per_track
 
     def get_tracks(self):
         """Loads input and output tracks"""
-        p = Path(self.root, self.split)
+        p = Path(self.root_path, self.split)
         for track_path in tqdm.tqdm(p.iterdir()):
             if track_path.is_dir():
                 if self.subset and track_path.stem not in self.subset:
                     # skip this track
+                    continue
+
+                if self.exclude and track_path.stem in self.exclude:
+                    # skip excluded track
                     continue
 
                 source_paths = [track_path / (s + self.suffix) for s in self.sources]

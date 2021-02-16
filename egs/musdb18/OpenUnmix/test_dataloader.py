@@ -67,7 +67,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     dataset_kwargs = {
-        "root": Path(args.root),
+        "root_path": Path(args.root),
     }
 
     source_augmentations = Compose(
@@ -80,7 +80,7 @@ if __name__ == "__main__":
         random_track_mix=args.random_track_mix,
         segment=args.seq_dur,
         random_segments=True,
-        samples_per_track=64,
+        ex_per_track=16,
         **dataset_kwargs,
     )
 
@@ -104,25 +104,26 @@ if __name__ == "__main__":
     ]
 
     valid_dataset = MUSDB18Dataset(
-        split="train", subset=validation_tracks, segment=None, **dataset_kwargs
+        split="valid", segment=None, **dataset_kwargs
     )
 
     test_dataset = MUSDB18Dataset(split="test", subset=None, segment=None, **dataset_kwargs)
 
-    print("Number of train tracks: ", len(train_dataset.tracks))
-    print("Number of validation tracks: ", len(valid_dataset.tracks))
-    print("Number of test tracks: ", len(test_dataset.tracks))
+    print("Number of train tracks: ", len(train_dataset.tracks), flush=True)
+    print("Number of validation tracks: ", len(valid_dataset.tracks), flush=True)
+    print("Number of test tracks: ", len(test_dataset.tracks), flush=True)
 
-    print("Number of train samples: ", len(train_dataset))
-    print("Number of validation samples: ", len(valid_dataset))
-    print("Number of test samples: ", len(test_dataset))
+    print("Number of train samples: ", len(train_dataset), flush=True)
+    print("Number of validation samples: ", len(valid_dataset), flush=True)
+    print("Number of test samples: ", len(test_dataset), flush=True)
 
     train_sampler = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
+        valid_dataset,
+        batch_size=1, #args.batch_size,
         shuffle=True,
         num_workers=0,
     )
 
     for x, y in tqdm.tqdm(train_sampler):
+        print(x.shape)
         pass
